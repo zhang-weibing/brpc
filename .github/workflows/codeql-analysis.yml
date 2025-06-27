@@ -42,8 +42,8 @@ jobs:
       run: |
         sudo apt-get update
         # =================================================================
-        #   在这里加入了 libleveldb-dev，以解决编译错误
-        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev
+        #   在这里加入了 libprotobuf-dev，以解决新的编译错误
+        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev
         # =================================================================
 
     # 步骤5: 编译项目
