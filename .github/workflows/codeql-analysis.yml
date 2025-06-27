@@ -29,7 +29,17 @@ jobs:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
         path: 'source_code'
 
-    # 步骤3: 初始化CodeQL
+    # ========================== 核心修改点 ==========================
+    # 步骤3: (新) 安装并设置一个指定的、更兼容的GCC版本 (GCC 11)
+    - name: Set up a specific GCC version
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-11 g++-11
+        echo "CC=/usr/bin/gcc-11" >> $GITHUB_ENV
+        echo "CXX=/usr/bin/g++-11" >> $GITHUB_ENV
+    # ==============================================================
+
+    # 步骤4: 初始化CodeQL。它会自动使用我们刚设置的默认编译器。
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
@@ -37,30 +47,27 @@ jobs:
         queries: ./workflow_repo/.github/codeql-queries
         source-root: source_code
         
-    # 步骤4: 安装依赖 (核心修改点)
-    - name: Install dependencies
+    # 步骤5: 安装其他依赖
+    - name: Install other dependencies
       run: |
-        sudo apt-get update
-        # =================================================================
-        #   在这里加入了 libprotoc-dev，这是解决问题的关键
+        # 我们已经运行过 apt-get update，这里可以省略
         sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
-        # =================================================================
 
-    # 步骤5: 编译项目
+    # 步骤6: 编译项目
     - name: Build project
       run: |
         cd source_code
         cmake .
         make -j2
 
-    # 步骤6: 运行分析
+    # 步骤7: 运行分析
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         output: ../results
         format: csv
 
-    # 步骤7: 上传结果
+    # 步骤8: 上传结果
     - name: Upload results as an artifact
       uses: actions/upload-artifact@v4
       with:
