@@ -13,60 +13,54 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 检出包含工作流和查询文件的最新代码 (master分支)
-    # 这确保了我们的配置文件存在于虚拟机上
+    # 步骤1: 检出包含工作流和查询文件的最新代码
     - name: Checkout workflow files
       uses: actions/checkout@v4
       with:
-        # 只检出配置文件所在的路径，提高效率
         path: 'workflow_repo'
         sparse-checkout: |
           .github/workflows
           .github/codeql-queries
     
-    # 步骤2: 将旧版本的源代码检出到一个单独的目录中
+    # 步骤2: 将旧版本的源代码检出到单独的目录中
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
-        # 指定你想要分析的那个旧的commit
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
-        # 将它放到一个名为'source_code'的子目录里
         path: 'source_code'
 
-    # 步骤3: 初始化CodeQL (已更新到v3)
-    # 我们告诉CodeQL，源代码在'source_code'目录里
+    # 步骤3: 初始化CodeQL
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
-        # 查询文件现在在我们检出的'workflow_repo'目录里
         queries: ./workflow_repo/.github/codeql-queries
-        # 指定源代码根目录
         source-root: source_code
         
-    # 步骤4: 安装依赖
+    # 步骤4: 安装依赖 (核心修改点)
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev
+        # =================================================================
+        #   在这里加入了 libleveldb-dev，以解决编译错误
+        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev
+        # =================================================================
 
-    # 步骤5: 编译项目。注意：我们需要先进到源代码目录里再编译。
+    # 步骤5: 编译项目
     - name: Build project
       run: |
         cd source_code
         cmake .
         make -j2
-      # Autobuild在这里可能因为目录改变而出错，直接运行编译命令更稳妥
-      # CodeQL的init已经设置好了全局追踪，所以编译过程会被捕捉到
 
-    # 步骤6: 运行分析 (已更新到v3)
+    # 步骤6: 运行分析
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         output: ../results
         format: csv
 
-    # 步骤7: 上传结果 (已更新到v4)
+    # 步骤7: 上传结果
     - name: Upload results as an artifact
       uses: actions/upload-artifact@v4
       with:
