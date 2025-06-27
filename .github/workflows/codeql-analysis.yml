@@ -1,63 +1,57 @@
 # 文件路径: .github/workflows/codeql-analysis.yml
+# 修正了 upload-artifact 版本的最终版
+
 name: "CodeQL Feature Extraction"
 
 on:
-  # 允许我们手动从GitHub的Actions页面触发这个工作流
   workflow_dispatch:
 
 jobs:
   extract-features:
-    # 在最新的Ubuntu虚拟机上运行
     runs-on: ubuntu-latest
     
-    # 定义这个job需要的权限
     permissions:
-      security-events: write # 写入CodeQL分析结果需要
-      actions: read          # 读取Action配置需要
-      contents: read         # 读取仓库内容需要
+      security-events: write
+      actions: read
+      contents: read
 
     steps:
-    # 步骤1: 检出你指定的commit版本的代码
+    # 步骤1: 检出代码
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # 步骤2: 初始化CodeQL。这是CodeQL Action的核心
+    # 步骤2: 初始化CodeQL
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v2
       with:
-        # 指定要分析的语言是C++
         languages: cpp
-        # 关键！告诉CodeQL去哪里寻找我们的自定义查询。
-        # 它会自动扫描这个目录下的所有.ql文件。
         queries: ./.github/codeql-queries
 
-    # 步骤3: 安装编译brpc所需要的依赖环境
+    # 步骤3: 安装依赖
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev
 
-    # 步骤4: 编译项目。CodeQL的init步骤已经设置好了"间谍"，
-    #         所以这个编译过程会被CodeQL自动追踪，用来构建代码数据库。
+    # 步骤4: 编译项目
     - name: Autobuild
       uses: github/codeql-action/autobuild@v2
 
-    # 步骤5: 运行分析。CodeQL会运行它找到的所有查询（包括我们自定义的那个）
+    # 步骤5: 运行CodeQL分析
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
       with:
-        # 指定输出目录。所有查询结果都会被放到这个目录里。
         output: ../results
-        # 指定输出格式为CSV，方便后续用脚本处理
         format: csv
 
-    # 步骤6: 将结果打包成一个可下载的工件(Artifact)
+    # 步骤6: 上传结果 (核心修改点)
     - name: Upload results as an artifact
-      uses: actions/upload-artifact@v3
+      # ==========================================================
+      #   已将版本从 v3 更新为 v4
+      uses: actions/upload-artifact@v4
+      # ==========================================================
       with:
-        # 工件的名字，你将在下载时看到这个名字
         name: codeql-feature-results
-        # 要上传的路径，就是我们上一步指定的输出目录
         path: ../results
