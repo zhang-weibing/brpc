@@ -60,23 +60,23 @@ jobs:
         languages: cpp
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # ========================== 核心修改点 ==========================
-    # 步骤4: 安装所有依赖，并使用 update-alternatives 强制设置默认编译器
-    - name: Install dependencies and set GCC 11 as default
+    # 步骤4: 安装所有依赖
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-11 g++-11 build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
-        
-        # 使用 update-alternatives 强制切换系统默认的gcc/g++
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
-    # ==============================================================
+        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-    # 步骤5: 编译项目。现在无需再手动设置CC/CXX，系统默认就是GCC 11。
-    - name: Build project
+    # ========================== 最终核心修改点 ==========================
+    # 步骤5: 编译项目，并在编译前注入宏定义来解决环境兼容性问题
+    - name: Build project with patched flags
       run: |
+        # 强制注入宏定义，告诉编译器忽略__has_attribute特性检查
+        export CXXFLAGS="$CXXFLAGS -D__has_attribute(x)=0"
+        
+        # 运行编译
         cmake .
         make -j2
+    # ==============================================================
 
     # 步骤6: 运行分析
     - name: Perform CodeQL Analysis
