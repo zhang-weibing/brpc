@@ -13,18 +13,16 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 只检出想要分析的那个旧的commit版本
+    # 步骤1: 只检出你想要分析的那个旧的commit版本
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # 步骤2: (新) 动态创建CodeQL查询文件
-    # 我们把查询内容直接写在这里，避免了文件不存在的问题
+    # 步骤2: 动态创建CodeQL查询文件
     - name: Create CodeQL Query File
       run: |
         mkdir -p ./.github/codeql-queries
-        # 使用'cat'和'EOF'来将多行文本写入文件
         cat <<'EOF' > ./.github/codeql-queries/FeatureExtraction.ql
         /**
          * @name Extract Features for Cohesion Analysis
@@ -60,21 +58,23 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
-        # 直接使用我们刚刚创建的查询文件路径
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # 步骤4: 安装所有依赖，包括指定版本的编译器
-    - name: Install all dependencies
+    # ========================== 核心修改点 ==========================
+    # 步骤4: 安装所有依赖，并使用 update-alternatives 强制设置默认编译器
+    - name: Install dependencies and set GCC 11 as default
       run: |
         sudo apt-get update
         sudo apt-get install -y gcc-11 g++-11 build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
+        
+        # 使用 update-alternatives 强制切换系统默认的gcc/g++
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
+    # ==============================================================
 
-    # 步骤5: 编译项目，并在命令前直接指定编译器
+    # 步骤5: 编译项目。现在无需再手动设置CC/CXX，系统默认就是GCC 11。
     - name: Build project
-      # 直接在命令前设置环境变量，这是最可靠的方式
       run: |
-        export CC=/usr/bin/gcc-11
-        export CXX=/usr/bin/g++-11
         cmake .
         make -j2
 
