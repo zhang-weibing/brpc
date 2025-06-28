@@ -13,61 +13,79 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 检出包含工作流和查询文件的最新代码
-    - name: Checkout workflow files
-      uses: actions/checkout@v4
-      with:
-        path: 'workflow_repo'
-        sparse-checkout: |
-          .github/workflows
-          .github/codeql-queries
-    
-    # 步骤2: 将旧版本的源代码检出到单独的目录中
+    # 步骤1: 只检出想要分析的那个旧的commit版本
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
-        path: 'source_code'
 
-    # ========================== 核心修改点 ==========================
-    # 步骤3: (新) 安装并设置一个指定的、更兼容的GCC版本 (GCC 11)
-    - name: Set up a specific GCC version
+    # 步骤2: (新) 动态创建CodeQL查询文件
+    # 我们把查询内容直接写在这里，避免了文件不存在的问题
+    - name: Create CodeQL Query File
       run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-11 g++-11
-        echo "CC=/usr/bin/gcc-11" >> $GITHUB_ENV
-        echo "CXX=/usr/bin/g++-11" >> $GITHUB_ENV
-    # ==============================================================
+        mkdir -p ./.github/codeql-queries
+        # 使用'cat'和'EOF'来将多行文本写入文件
+        cat <<'EOF' > ./.github/codeql-queries/FeatureExtraction.ql
+        /**
+         * @name Extract Features for Cohesion Analysis
+         * @description This query extracts all referenced symbols (functions, variables, types) for each source file.
+         * @kind table
+         */
+        import cpp
 
-    # 步骤4: 初始化CodeQL。它会自动使用我们刚设置的默认编译器。
+        string getQualifiedName(Element e) {
+          e.(Function).hasGlobalOrStdName() and result = e.(Function).getQualifiedName()
+          or
+          e.(Variable).hasGlobalOrStdName() and result = e.(Variable).getQualified_name()
+          or
+          result = e.(Type).getName()
+        }
+
+        from File f, Element ref, string featureType
+        where
+          (f.getExtension() = "cpp" or f.getExtension() = "h" or f.getExtension() = "hpp") and
+          f.getRelativePath().matches("src/brpc/%") and
+          (
+            exists(Call c | c.getEnclosingFunction().getFile() = f and ref = c.getTarget() and featureType = "FunctionCall")
+            or
+            exists(VariableAccess va | va.getEnclosingFunction().getFile() = f and ref = va.getTarget() and featureType = "VariableAccess")
+            or
+            exists(TypeAccess ta | ta.getEnclosingFunction().getFile() = f and ref = ta.getType() and featureType = "TypeAccess")
+          )
+        select f.getRelativePath() as file, featureType, getQualifiedName(ref) as feature
+        EOF
+
+    # 步骤3: 初始化CodeQL
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
-        queries: ./workflow_repo/.github/codeql-queries
-        source-root: source_code
-        
-    # 步骤5: 安装其他依赖
-    - name: Install other dependencies
-      run: |
-        # 我们已经运行过 apt-get update，这里可以省略
-        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
+        # 直接使用我们刚刚创建的查询文件路径
+        queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # 步骤6: 编译项目
-    - name: Build project
+    # 步骤4: 安装所有依赖，包括指定版本的编译器
+    - name: Install all dependencies
       run: |
-        cd source_code
+        sudo apt-get update
+        sudo apt-get install -y gcc-11 g++-11 build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
+
+    # 步骤5: 编译项目，并在命令前直接指定编译器
+    - name: Build project
+      # 直接在命令前设置环境变量，这是最可靠的方式
+      run: |
+        export CC=/usr/bin/gcc-11
+        export CXX=/usr/bin/g++-11
         cmake .
         make -j2
 
-    # 步骤7: 运行分析
+    # 步骤6: 运行分析
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         output: ../results
         format: csv
 
-    # 步骤8: 上传结果
+    # 步骤7: 上传结果
     - name: Upload results as an artifact
       uses: actions/upload-artifact@v4
       with:
