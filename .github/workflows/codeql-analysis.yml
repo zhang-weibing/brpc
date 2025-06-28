@@ -5,15 +5,10 @@ on:
 
 jobs:
   extract-features:
-    # 不再直接在虚拟机上运行
     runs-on: ubuntu-latest
     
-    # ========================== 最终核心修改点 ==========================
-    # 指定我们的所有步骤都在一个特定的Docker容器内运行
     container:
-      # 使用一个更旧、更稳定的Ubuntu 20.04镜像
       image: ubuntu:20.04
-    # ==============================================================
     
     permissions:
       security-events: write
@@ -21,7 +16,7 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 检出代码。Action会自动在容器内执行。
+    # 步骤1: 检出代码
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
@@ -29,7 +24,6 @@ jobs:
 
     # 步骤2: 动态创建CodeQL查询文件
     - name: Create CodeQL Query File
-      # 在容器内，我们需要先确保目录存在
       run: |
         mkdir -p ./.github/codeql-queries
         cat <<'EOF' > ./.github/codeql-queries/FeatureExtraction.ql
@@ -70,13 +64,10 @@ jobs:
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
     # 步骤4: 在容器内安装所有依赖
-    # Ubuntu 20.04的环境是干净的，我们需要安装所有东西
     - name: Install dependencies in container
       run: |
-        # 设置DEBIAN_FRONTEND=noninteractive以避免交互式提示
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        # 安装git和ca-certificates，因为基础镜像可能没有
         apt-get install -y git ca-certificates
         apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
@@ -86,16 +77,20 @@ jobs:
         cmake .
         make -j2
 
+    # ========================== 最终核心修改点 ==========================
     # 步骤6: 运行分析
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
-        output: ../results
-        format: csv
+        # 1. 修正路径：将输出路径从'../results'改为'results'
+        output: results
+        # 2. 清理参数：移除无效的'format'参数
 
     # 步骤7: 上传结果
     - name: Upload results as an artifact
       uses: actions/upload-artifact@v4
       with:
         name: codeql-feature-results
-        path: ../results
+        # 修正路径：将上传路径从'../results'改为'results'
+        path: results
+    # ==============================================================
