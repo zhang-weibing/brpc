@@ -47,8 +47,9 @@ jobs:
         select f.getRelativePath() as file, featureType, ref.toString() as feature
         EOF
 
-    # 步骤3: 初始化CodeQL。这一步会自动设置好CLI，并将其路径存入$CODEQL_EXE环境变量。
+    # 步骤3: 初始化CodeQL。这一步会自动设置好CLI，并将其路径存入$CODEQL_CLI环境变量。
     - name: Initialize CodeQL
+      id: codeql-init # 给这一步一个ID
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
@@ -75,10 +76,10 @@ jobs:
         output: results
         
     # ========================== 最终核心修改点 ==========================
-    # 步骤7: 使用$CODEQL_EXE环境变量来调用CodeQL CLI，解码结果
+    # 步骤7: 使用$CODEQL_CLI环境变量来调用CodeQL CLI，解码结果
     - name: Decode BQRS results to CSV
-      # $CODEQL_EXE 是由'init'步骤设置的，指向codeql命令的绝对路径
-      run: $CODEQL_EXE bqrs decode --format=csv --output=features.csv results/cpp.bqrs
+      # $CODEQL_CLI 是由'init'步骤设置的，指向codeql命令的绝对路径
+      run: $CODEQL_CLI bqrs decode --format=csv --output=features.csv results/cpp.bqrs
 
     # 步骤8: 将CSV转换为最终的JSON格式
     - name: Convert CSV to JSON
