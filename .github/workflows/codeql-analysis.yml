@@ -47,20 +47,14 @@ jobs:
         select f.getRelativePath() as file, featureType, ref.toString() as feature
         EOF
 
-    # 步骤3: 初始化CodeQL
+    # 步骤3: 初始化CodeQL。这一步会自动设置好CLI，并将其路径存入$CODEQL_EXE环境变量。
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # ========================== 最终核心修改点 1 ==========================
-    # 步骤4: (新) 设置CodeQL命令行工具，确保'codeql'命令可用
-    - name: Set up CodeQL CLI
-      uses: github/codeql-action/setup-cli@v3
-    # =====================================================================
-
-    # 步骤5: 在容器内安装依赖
+    # 步骤4: 在容器内安装依赖
     - name: Install dependencies in container
       run: |
         export DEBIAN_FRONTEND=noninteractive
@@ -68,25 +62,25 @@ jobs:
         apt-get install -y git ca-certificates python3 python3-pip
         apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-    # 步骤6: 编译项目
+    # 步骤5: 编译项目
     - name: Build project
       run: |
         cmake .
         make -j2
 
-    # 步骤7: 运行分析，生成.bqrs结果
+    # 步骤6: 运行分析，生成.bqrs结果
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         output: results
         
-    # ========================== 最终核心修改点 2 ==========================
-    # 步骤8: 使用现在可用的'codeql'命令直接解码结果
+    # ========================== 最终核心修改点 ==========================
+    # 步骤7: 使用$CODEQL_EXE环境变量来调用CodeQL CLI，解码结果
     - name: Decode BQRS results to CSV
-      # 现在可以直接调用 'codeql' 命令了
-      run: codeql bqrs decode --format=csv --output=features.csv results/cpp/custom-queries/FeatureExtraction.bqrs
+      # $CODEQL_EXE 是由'init'步骤设置的，指向codeql命令的绝对路径
+      run: $CODEQL_EXE bqrs decode --format=csv --output=features.csv results/cpp.bqrs
 
-    # 步骤9: 将CSV转换为最终的JSON格式
+    # 步骤8: 将CSV转换为最终的JSON格式
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -121,10 +115,10 @@ jobs:
 
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤10: 上传最终的JSON文件
+    # 步骤9: 上传最终的JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
         name: extracted-features-json
         path: extracted_features.json
-    # ====================================================================
+    # ==============================================================
