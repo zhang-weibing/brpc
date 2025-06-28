@@ -28,32 +28,23 @@ jobs:
         mkdir -p ./.github/codeql-queries
         cat <<'EOF' > ./.github/codeql-queries/FeatureExtraction.ql
         /**
-         * @name Extract Features for Cohesion Analysis
-         * @description This query extracts all referenced symbols (functions, variables, types) for each source file.
+         * @name Extract Features for Cohesion Analysis (v2)
+         * @description This query extracts all referenced symbols for each source file.
          * @kind table
          */
         import cpp
 
-        string getQualifiedName(Element e) {
-          e.(Function).hasGlobalOrStdName() and result = e.(Function).getQualifiedName()
-          or
-          e.(Variable).hasGlobalOrStdName() and result = e.(Variable).getQualified_name()
-          or
-          result = e.(Type).getName()
-        }
-
-        from File f, Element ref, string featureType
+        from File f, Locatable ref, string featureType
         where
           (f.getExtension() = "cpp" or f.getExtension() = "h" or f.getExtension() = "hpp") and
           f.getRelativePath().matches("src/brpc/%") and
           (
-            exists(Call c | c.getEnclosingFunction().getFile() = f and ref = c.getTarget() and featureType = "FunctionCall")
-            or
-            exists(VariableAccess va | va.getEnclosingFunction().getFile() = f and ref = va.getTarget() and featureType = "VariableAccess")
-            or
-            exists(TypeAccess ta | ta.getEnclosingFunction().getFile() = f and ref = ta.getType() and featureType = "TypeAccess")
-          )
-        select f.getRelativePath() as file, featureType, getQualifiedName(ref) as feature
+            exists(Call c | c.getLocation().getFile() = f and ref = c.getTarget() and featureType = "FunctionCall") or
+            exists(VariableAccess va | va.getLocation().getFile() = f and ref = va.getTarget() and featureType = "VariableAccess") or
+            exists(TypeAccess ta | ta.getLocation().getFile() = f and ref = ta.getType() and featureType = "TypeAccess")
+          ) and
+          ref.toString() != ""
+        select f.getRelativePath() as file, featureType, ref.toString() as feature
         EOF
 
     # 步骤3: 初始化CodeQL
@@ -63,12 +54,12 @@ jobs:
         languages: cpp
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # 步骤4: 在容器内安装所有依赖
+    # 步骤4: 在容器内安装依赖 (包括python3)
     - name: Install dependencies in container
       run: |
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        apt-get install -y git ca-certificates
+        apt-get install -y git ca-certificates python3 python3-pip
         apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
     # 步骤5: 编译项目
@@ -77,20 +68,77 @@ jobs:
         cmake .
         make -j2
 
-    # ========================== 最终核心修改点 ==========================
-    # 步骤6: 运行分析
+    # 步骤6: 运行分析，生成SARIF文件
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
-        # 1. 修正路径：将输出路径从'../results'改为'results'
         output: results
-        # 2. 清理参数：移除无效的'format'参数
 
-    # 步骤7: 上传结果
-    - name: Upload results as an artifact
+    # ========================== 最终核心修改点 ==========================
+    # 步骤7: (新) 在云端将SARIF转换为JSON
+    - name: Convert SARIF to JSON
+      id: conversion # 给这一步一个ID，方便后续引用
+      # 在容器内直接运行Python脚本
+      run: |
+        # 将Python转换脚本内容写入一个文件
+        cat <<'PY_EOF' > sarif_to_json.py
+        import json
+        import sys
+        from collections import defaultdict
+
+        def convert_sarif_to_json(sarif_file_path, json_file_path):
+            try:
+                with open(sarif_file_path, 'r', encoding='utf-8') as f:
+                    sarif_data = json.load(f)
+            except Exception as e:
+                print(f"Error reading or parsing SARIF file: {e}")
+                sys.exit(1)
+            
+            features_by_file = defaultdict(set)
+            if not sarif_data.get('runs'): return
+            
+            for run in sarif_data['runs']:
+                rules = {}
+                # 建立ruleId到name的映射
+                for tool_component in ['driver', 'extensions']:
+                    for rule_container in run.get('tool', {}).get(tool_component, []):
+                        for rule in rule_container.get('rules',[]):
+                            rules[rule['id']] = rule.get('name', '')
+                
+                for result in run.get('results', []):
+                    rule_id = result.get('ruleId')
+                    # 检查是否是我们的自定义查询结果
+                    if 'Extract Features for Cohesion Analysis' in rules.get(rule_id, ''):
+                        locations = result.get('locations', [])
+                        if locations:
+                            message_text = locations[0].get('message', {}).get('text', '')
+                            parts = [p.strip() for p in message_text.split('|')]
+                            if len(parts) == 3:
+                                file, _, feature = parts
+                                if file and feature:
+                                    features_by_file[file].add(feature)
+            
+            output_dict = {file: sorted(list(features)) for file, features in features_by_file.items()}
+            
+            with open(json_file_path, 'w', encoding='utf-8') as json_file:
+                json.dump(output_dict, json_file, indent=2, ensure_ascii=False)
+            
+            print(f"Conversion complete. Processed {len(output_dict)} files.")
+            print(f"Results saved to: {json_file_path}")
+            # 设置一个输出变量，方便后续步骤使用
+            print(f"::set-output name=json_path::{json_file_path}")
+
+        PY_EOF
+        
+        # 运行我们刚刚创建的Python脚本
+        # CodeQL的结果默认在 'results/cpp.sarif'
+        python3 sarif_to_json.py results/cpp.sarif extracted_features.json
+
+    # 步骤8: 上传最终的JSON文件
+    - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
-        name: codeql-feature-results
-        # 修正路径：将上传路径从'../results'改为'results'
-        path: results
+        name: extracted-features-json
+        # 只上传我们生成的那个JSON文件
+        path: extracted_features.json
     # ==============================================================
