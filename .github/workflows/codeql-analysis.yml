@@ -5,7 +5,15 @@ on:
 
 jobs:
   extract-features:
+    # 不再直接在虚拟机上运行
     runs-on: ubuntu-latest
+    
+    # ========================== 最终核心修改点 ==========================
+    # 指定我们的所有步骤都在一个特定的Docker容器内运行
+    container:
+      # 使用一个更旧、更稳定的Ubuntu 20.04镜像
+      image: ubuntu:20.04
+    # ==============================================================
     
     permissions:
       security-events: write
@@ -13,7 +21,7 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 只检出你想要分析的那个旧的commit版本
+    # 步骤1: 检出代码。Action会自动在容器内执行。
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
@@ -21,6 +29,7 @@ jobs:
 
     # 步骤2: 动态创建CodeQL查询文件
     - name: Create CodeQL Query File
+      # 在容器内，我们需要先确保目录存在
       run: |
         mkdir -p ./.github/codeql-queries
         cat <<'EOF' > ./.github/codeql-queries/FeatureExtraction.ql
@@ -53,41 +62,38 @@ jobs:
         select f.getRelativePath() as file, featureType, getQualifiedName(ref) as feature
         EOF
 
-    # ========================== 最终核心修改点 ==========================
-    # 步骤3: (新) 在所有操作之前，强制设置GCC-12为系统默认编译器
-    - name: Set up GCC-12 as default compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-12 g++-12
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
-
-    # 步骤4: 初始化CodeQL。它会自动使用我们刚设置的GCC-12。
+    # 步骤3: 初始化CodeQL
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # 步骤5: 安装其他编译依赖
-    - name: Install other build dependencies
+    # 步骤4: 在容器内安装所有依赖
+    # Ubuntu 20.04的环境是干净的，我们需要安装所有东西
+    - name: Install dependencies in container
       run: |
-        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
+        # 设置DEBIAN_FRONTEND=noninteractive以避免交互式提示
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        # 安装git和ca-certificates，因为基础镜像可能没有
+        apt-get install -y git ca-certificates
+        apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-    # 步骤6: 编译项目
+    # 步骤5: 编译项目
     - name: Build project
       run: |
         cmake .
         make -j2
 
-    # 步骤7: 运行分析
+    # 步骤6: 运行分析
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         output: ../results
         format: csv
 
-    # 步骤8: 上传结果
+    # 步骤7: 上传结果
     - name: Upload results as an artifact
       uses: actions/upload-artifact@v4
       with:
