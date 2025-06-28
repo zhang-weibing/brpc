@@ -67,11 +67,11 @@ jobs:
         sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
     # ========================== 最终核心修改点 ==========================
-    # 步骤5: 编译项目，并在编译前注入宏定义来解决环境兼容性问题
+    # 步骤5: 编译项目，并使用单引号保护宏定义
     - name: Build project with patched flags
       run: |
-        # 强制注入宏定义，告诉编译器忽略__has_attribute特性检查
-        export CXXFLAGS="$CXXFLAGS -D__has_attribute(x)=0"
+        # 使用单引号将宏定义包起来，防止shell错误解析括号
+        export CXXFLAGS="$CXXFLAGS -D'__has_attribute(x)=0'"
         
         # 运行编译
         cmake .
