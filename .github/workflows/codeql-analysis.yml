@@ -53,10 +53,14 @@ jobs:
       with:
         languages: cpp
         queries: ./.github/codeql-queries/FeatureExtraction.ql
-        # 我们需要一个可预测的数据库路径
-        db-location: ./codeql-db
 
-    # 步骤4: 在容器内安装依赖
+    # ========================== 最终核心修改点 1 ==========================
+    # 步骤4: (新) 设置CodeQL命令行工具，确保'codeql'命令可用
+    - name: Set up CodeQL CLI
+      uses: github/codeql-action/setup-cli@v3
+    # =====================================================================
+
+    # 步骤5: 在容器内安装依赖
     - name: Install dependencies in container
       run: |
         export DEBIAN_FRONTEND=noninteractive
@@ -64,27 +68,25 @@ jobs:
         apt-get install -y git ca-certificates python3 python3-pip
         apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-    # 步骤5: 编译项目
+    # 步骤6: 编译项目
     - name: Build project
       run: |
         cmake .
         make -j2
 
-    # 步骤6: 运行分析。这一步会生成二进制的.bqrs结果文件
+    # 步骤7: 运行分析，生成.bqrs结果
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
-        # 将结果输出到'results'目录
         output: results
         
-    # ========================== 最终核心修改点 ==========================
-    # 步骤7: (新) 使用CodeQL CLI直接将结果解码为CSV
+    # ========================== 最终核心修改点 2 ==========================
+    # 步骤8: 使用现在可用的'codeql'命令直接解码结果
     - name: Decode BQRS results to CSV
-      # CodeQL CLI的路径在 $CODEQL_PATH/codeql
-      # 我们告诉它，解码我们自定义查询的结果，格式是csv，输出到 features.csv
-      run: $CODEQL_PATH/codeql bqrs decode --format=csv --output=features.csv results/custom-queries/FeatureExtraction.bqrs
+      # 现在可以直接调用 'codeql' 命令了
+      run: codeql bqrs decode --format=csv --output=features.csv results/cpp/custom-queries/FeatureExtraction.bqrs
 
-    # 步骤8: (新) 将CSV转换为最终的JSON格式
+    # 步骤9: 将CSV转换为最终的JSON格式
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -95,14 +97,16 @@ jobs:
 
         def csv_to_json(csv_path, json_path):
             features_by_file = defaultdict(set)
-            with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
-                reader = csv.reader(csvfile)
-                # 跳过表头
-                next(reader, None) 
-                for row in reader:
-                    if len(row) == 3:
-                        file, _, feature = row
-                        features_by_file[file].add(feature)
+            try:
+                with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
+                    reader = csv.reader(csvfile)
+                    next(reader, None) # Skip header
+                    for row in reader:
+                        if len(row) == 3:
+                            file, _, feature = row
+                            features_by_file[file].add(feature)
+            except FileNotFoundError:
+                print(f"Warning: CSV file '{csv_path}' not found. Output will be empty.")
             
             output_dict = {file: sorted(list(features)) for file, features in features_by_file.items()}
             
@@ -117,10 +121,10 @@ jobs:
 
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤9: 上传最终的JSON文件
+    # 步骤10: 上传最终的JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
         name: extracted-features-json
         path: extracted_features.json
-    # ==============================================================
+    # ====================================================================
