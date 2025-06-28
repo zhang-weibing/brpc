@@ -53,39 +53,41 @@ jobs:
         select f.getRelativePath() as file, featureType, getQualifiedName(ref) as feature
         EOF
 
-    # 步骤3: 初始化CodeQL
+    # ========================== 最终核心修改点 ==========================
+    # 步骤3: (新) 在所有操作之前，强制设置GCC-12为系统默认编译器
+    - name: Set up GCC-12 as default compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-12 g++-12
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+
+    # 步骤4: 初始化CodeQL。它会自动使用我们刚设置的GCC-12。
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: cpp
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # 步骤4: 安装所有依赖
-    - name: Install dependencies
+    # 步骤5: 安装其他编译依赖
+    - name: Install other build dependencies
       run: |
-        sudo apt-get update
         sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-    # ========================== 最终核心修改点 ==========================
-    # 步骤5: 编译项目，并使用单引号保护宏定义
-    - name: Build project with patched flags
+    # 步骤6: 编译项目
+    - name: Build project
       run: |
-        # 使用单引号将宏定义包起来，防止shell错误解析括号
-        export CXXFLAGS="$CXXFLAGS -D'__has_attribute(x)=0'"
-        
-        # 运行编译
         cmake .
         make -j2
-    # ==============================================================
 
-    # 步骤6: 运行分析
+    # 步骤7: 运行分析
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         output: ../results
         format: csv
 
-    # 步骤7: 上传结果
+    # 步骤8: 上传结果
     - name: Upload results as an artifact
       uses: actions/upload-artifact@v4
       with:
