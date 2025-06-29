@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (The Real Final Solution v4 - The Cleaner)"
+name: "CodeQL Feature Extraction"
 
 on:
   workflow_dispatch:
