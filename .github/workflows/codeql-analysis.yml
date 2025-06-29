@@ -88,14 +88,16 @@ jobs:
       run: /usr/local/share/codeql/codeql pack install ./codeql-custom-queries
 
     # ========================== 最终核心修改点 ==========================
-    # 步骤8: (新) 删除所有可能引起冲突的brpc自带的CodeQL模型文件
-    - name: Remove conflicting CodeQL model files
+    # 步骤8: 在分析前，删除所有可能引起冲突的.model.yml文件，无论它们在哪里
+    - name: Remove ALL conflicting CodeQL model files
       run: |
-        echo "Searching for and deleting conflicting .yml model files..."
-        # 查找所有名为*.model.yml的文件并删除它们
+        echo "Searching for and deleting conflicting .yml model files from both repo and cache..."
+        # 1. 删除项目目录里的
         find . -type f -name "*.model.yml" -print -delete
+        # 2. 删除CodeQL包缓存里的 (如果存在的话)
+        find /github/home/.codeql -type f -name "*.model.yml" -print -delete || true
 
-    # 步骤9: 运行分析，现在不会再找到不兼容的模型文件了
+    # 步骤9: 运行分析
     - name: Perform CodeQL Analysis and decode results
       run: |
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
