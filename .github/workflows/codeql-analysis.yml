@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (The Real Final Solution v3)"
+name: "CodeQL Feature Extraction"
 
 on:
   workflow_dispatch:
@@ -26,14 +26,12 @@ jobs:
     - name: Create CodeQL Query Pack
       run: |
         mkdir -p codeql-custom-queries
-        
         cat <<'QLPACK_EOF' > codeql-custom-queries/qlpack.yml
         name: custom/feature-extraction
         version: 0.0.1
         dependencies:
           codeql/cpp-all: "*"
         QLPACK_EOF
-
         cat <<'QL_EOF' > codeql-custom-queries/FeatureExtraction.ql
         /**
          * @name Extract Features for Cohesion Analysis (v2)
@@ -41,7 +39,6 @@ jobs:
          * @kind table
          */
         import cpp
-
         from File f, Locatable ref, string featureType
         where
           (f.getExtension() = "cpp" or f.getExtension() = "h" or f.getExtension() = "hpp") and
@@ -80,8 +77,7 @@ jobs:
 
     # 步骤5: 创建CodeQL数据库
     - name: Create CodeQL database
-      run: |
-        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
+      run: /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
         
     # 步骤6: 升级数据库
     - name: Upgrade CodeQL database
@@ -92,12 +88,19 @@ jobs:
       run: /usr/local/share/codeql/codeql pack install ./codeql-custom-queries
 
     # ========================== 最终核心修改点 ==========================
-    # 步骤8: 运行分析，并明确指定只运行我们自己的那一个查询文件
+    # 步骤8: (新) 删除所有可能引起冲突的brpc自带的CodeQL模型文件
+    - name: Remove conflicting CodeQL model files
+      run: |
+        echo "Searching for and deleting conflicting .yml model files..."
+        # 查找所有名为*.model.yml的文件并删除它们
+        find . -type f -name "*.model.yml" -print -delete
+
+    # 步骤9: 运行分析，现在不会再找到不兼容的模型文件了
     - name: Perform CodeQL Analysis and decode results
       run: |
-        /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries/FeatureExtraction.ql --format=csv --output=features.csv
+        /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
 
-    # 步骤9: 将CSV转换为JSON
+    # 步骤10: 将CSV转换为JSON
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -118,7 +121,7 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤10: 上传JSON文件
+    # 步骤11: 上传JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
