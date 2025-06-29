@@ -55,7 +55,7 @@ jobs:
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
     # ========================== 最终核心修改点 ==========================
-    # 步骤4: 在容器内安装所有依赖，并在安装CLI后赋予其可执行权限
+    # 步骤4: 在容器内安装依赖，并正确地安装CodeQL CLI
     - name: Install dependencies and CodeQL CLI in container
       run: |
         export DEBIAN_FRONTEND=noninteractive
@@ -67,11 +67,12 @@ jobs:
         wget https://github.com/github/codeql-cli-binaries/releases/download/v2.16.2/codeql-linux64.zip
         unzip codeql-linux64.zip
         
-        # 移动到标准路径
+        # 1. 将整个codeql目录移动到/usr/local/bin
         mv codeql /usr/local/bin/
-        
-        # 关键！赋予其可执行权限
-        chmod +x /usr/local/bin/codeql
+        # 2. 给真正的可执行文件赋予权限
+        chmod +x /usr/local/bin/codeql/codeql
+        # 3. 创建一个符号链接，这样我们就可以直接调用'codeql'命令了
+        ln -sf /usr/local/bin/codeql/codeql /usr/local/bin/codeql
 
     # 步骤5: 编译项目
     - name: Build project
