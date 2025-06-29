@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (Final Ultimate v5)"
+name: "CodeQL Feature Extraction"
 
 on:
   workflow_dispatch:
@@ -60,22 +60,34 @@ jobs:
         mv codeql /usr/local/share/
         chmod +x /usr/local/share/codeql/codeql
         
-    # ========================== 最终核心修改点 ==========================
-    # 步骤4: 使用'codeql database create'，并传入最直接、最简单的编译命令
-    - name: Create CodeQL database and build the project
+    # ========================== 最终核心修改点 1 ==========================
+    # 步骤4: (新) 创建一个包含所有编译步骤的构建脚本
+    - name: Create build script
       run: |
-        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="cmake . && make -j2"
+        cat <<'EOF' > build.sh
+        #!/bin/bash
+        set -e # 如果任何命令失败，则立即退出
+        cmake .
+        make -j2
+        EOF
+        chmod +x build.sh
+
+    # ========================== 最终核心修改点 2 ==========================
+    # 步骤5: 使用'codeql database create'，并让它执行我们刚刚创建的脚本
+    - name: Create CodeQL database by running the build script
+      run: |
+        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="./build.sh"
         
-    # 步骤5: 升级数据库
+    # 步骤6: 升级数据库
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # 步骤6: 运行分析并解码结果
+    # 步骤7: 运行分析并解码结果
     - name: Perform CodeQL Analysis and decode results
       run: |
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./.github/codeql-queries/FeatureExtraction.ql --format=csv --output=features.csv
 
-    # 步骤7: 将CSV转换为最终的JSON格式
+    # 步骤8: 将CSV转换为最终的JSON格式
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -96,7 +108,7 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤8: 上传最终的JSON文件
+    # 步骤9: 上传最终的JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
