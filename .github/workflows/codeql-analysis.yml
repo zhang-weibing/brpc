@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (The Real Final Solution v2)"
+name: "CodeQL Feature Extraction (The Real Final Solution v3)"
 
 on:
   workflow_dispatch:
@@ -87,15 +87,15 @@ jobs:
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # ========================== 最终核心修改点 ==========================
-    # 步骤7: (新) 安装我们查询所需要的依赖包
+    # 步骤7: 安装查询依赖包
     - name: Install CodeQL packs
       run: /usr/local/share/codeql/codeql pack install ./codeql-custom-queries
 
-    # 步骤8: 运行分析，现在它能找到依赖了
+    # ========================== 最终核心修改点 ==========================
+    # 步骤8: 运行分析，并明确指定只运行我们自己的那一个查询文件
     - name: Perform CodeQL Analysis and decode results
       run: |
-        /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
+        /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries/FeatureExtraction.ql --format=csv --output=features.csv
 
     # 步骤9: 将CSV转换为JSON
     - name: Convert CSV to JSON
