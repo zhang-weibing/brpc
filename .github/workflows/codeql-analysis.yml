@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (Final Ultimate v3)"
+name: "CodeQL Feature Extraction"
 
 on:
   workflow_dispatch:
@@ -60,22 +60,20 @@ jobs:
         mv codeql /usr/local/share/
         chmod +x /usr/local/share/codeql/codeql
         
-    # ========================== 最终核心修改点 1 ==========================
+    # ========================== 最终核心修改点 ==========================
     # 步骤4: 使用'codeql database create'来创建数据库并编译代码
-    # 这个命令会确保编译过程被正确追踪
+    # 用 sh -c '...' 来确保编译命令被正确地作为一个整体执行
     - name: Create CodeQL database and build the project
       run: |
-        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="cmake . && make -j2"
+        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="sh -c 'cmake . && make -j2'"
         
-    # 步骤5: (新) 升级数据库。这是一个好习惯，可以应用最新的库更新。
+    # 步骤5: 升级数据库
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # ========================== 最终核心修改点 2 ==========================
-    # 步骤6: 运行分析，并明确告诉它要分析哪个数据库
+    # 步骤6: 运行分析并解码结果
     - name: Perform CodeQL Analysis and decode results
       run: |
-        # 我们将分析和解码合并在一步，避免中间文件问题
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./.github/codeql-queries/FeatureExtraction.ql --format=csv --output=features.csv
 
     # 步骤7: 将CSV转换为最终的JSON格式
