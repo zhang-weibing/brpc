@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction"
+name: "CodeQL Feature Extraction (Final Ultimate v5)"
 
 on:
   workflow_dispatch:
@@ -61,11 +61,10 @@ jobs:
         chmod +x /usr/local/share/codeql/codeql
         
     # ========================== 最终核心修改点 ==========================
-    # 步骤4: 使用'codeql database create'来创建数据库并编译代码
-    # 用 sh -c '...' 来确保编译命令被正确地作为一个整体执行
+    # 步骤4: 使用'codeql database create'，并传入最直接、最简单的编译命令
     - name: Create CodeQL database and build the project
       run: |
-        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="sh -c 'cmake . && make -j2'"
+        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="cmake . && make -j2"
         
     # 步骤5: 升级数据库
     - name: Upgrade CodeQL database
