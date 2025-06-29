@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (Final)"
+name: "CodeQL Feature Extraction (Final Ultimate)"
 
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ jobs:
   extract-features:
     runs-on: ubuntu-latest
     
-    # 1. 使用Docker容器来确保一个稳定、兼容的编译环境
     container:
       image: ubuntu:20.04
     
@@ -55,7 +54,8 @@ jobs:
         languages: cpp
         queries: ./.github/codeql-queries/FeatureExtraction.ql
 
-    # 步骤4: 在容器内安装所有依赖，并正确地安装CodeQL CLI
+    # ========================== 最终核心修改点 1 ==========================
+    # 步骤4: 在容器内安装依赖，并正确地安装CodeQL CLI (不再创建符号链接)
     - name: Install dependencies and CodeQL CLI in container
       run: |
         export DEBIAN_FRONTEND=noninteractive
@@ -67,12 +67,12 @@ jobs:
         wget https://github.com/github/codeql-cli-binaries/releases/download/v2.16.2/codeql-linux64.zip
         unzip codeql-linux64.zip
         
-        # 正确地移动和授权
-        mv codeql /usr/local/bin/
-        chmod +x /usr/local/bin/codeql/codeql
-        ln -sf /usr/local/bin/codeql/codeql /usr/local/bin/codeql
+        # 1. 将整个codeql目录移动到/usr/local/share (一个更适合放非二进制文件的地方)
+        mv codeql /usr/local/share/
+        # 2. 给真正的可执行文件赋予权限
+        chmod +x /usr/local/share/codeql/codeql
 
-    # 步骤5: 手动运行编译步骤
+    # 步骤5: 编译项目
     - name: Build project
       run: |
         cmake .
@@ -84,9 +84,10 @@ jobs:
       with:
         output: results
         
-    # 步骤7: 使用我们安装在容器内的codeql命令解码结果
+    # ========================== 最终核心修改点 2 ==========================
+    # 步骤7: 使用CodeQL CLI的绝对路径来解码结果
     - name: Decode BQRS results to CSV
-      run: codeql bqrs decode --format=csv --output=features.csv results/cpp.bqrs
+      run: /usr/local/share/codeql/codeql bqrs decode --format=csv --output=features.csv results/cpp.bqrs
 
     # 步骤8: 将CSV转换为最终的JSON格式
     - name: Convert CSV to JSON
@@ -115,3 +116,4 @@ jobs:
       with:
         name: extracted-features-json
         path: extracted_features.json
+    # ====================================================================
