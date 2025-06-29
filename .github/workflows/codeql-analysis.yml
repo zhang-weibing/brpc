@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (The Real Final Solution)"
+name: "CodeQL Feature Extraction (The Real Final Solution v2)"
 
 on:
   workflow_dispatch:
@@ -22,22 +22,18 @@ jobs:
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # ========================== 核心修改点 1 ==========================
-    # 步骤2: 动态创建CodeQL查询包 (包含qlpack.yml和.ql文件)
+    # 步骤2: 动态创建CodeQL查询包
     - name: Create CodeQL Query Pack
       run: |
-        # 创建查询包的根目录
         mkdir -p codeql-custom-queries
         
-        # 创建 qlpack.yml 文件
         cat <<'QLPACK_EOF' > codeql-custom-queries/qlpack.yml
         name: custom/feature-extraction
         version: 0.0.1
-        libraryPathDependencies:
-          - codeql/cpp-all
+        dependencies:
+          codeql/cpp-all: "*"
         QLPACK_EOF
 
-        # 创建查询文件
         cat <<'QL_EOF' > codeql-custom-queries/FeatureExtraction.ql
         /**
          * @name Extract Features for Cohesion Analysis (v2)
@@ -91,13 +87,17 @@ jobs:
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # ========================== 核心修改点 2 ==========================
-    # 步骤7: 运行分析，这次我们直接指定查询包的目录
+    # ========================== 最终核心修改点 ==========================
+    # 步骤7: (新) 安装我们查询所需要的依赖包
+    - name: Install CodeQL packs
+      run: /usr/local/share/codeql/codeql pack install ./codeql-custom-queries
+
+    # 步骤8: 运行分析，现在它能找到依赖了
     - name: Perform CodeQL Analysis and decode results
       run: |
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
 
-    # 步骤8: 将CSV转换为JSON
+    # 步骤9: 将CSV转换为JSON
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -118,9 +118,10 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤9: 上传JSON文件
+    # 步骤10: 上传JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
         name: extracted-features-json
         path: extracted_features.json
+    # ====================================================================
