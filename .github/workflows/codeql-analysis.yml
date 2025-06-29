@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (Final Ultimate v2)"
+name: "CodeQL Feature Extraction (Final Ultimate v3)"
 
 on:
   workflow_dispatch:
@@ -47,55 +47,62 @@ jobs:
         select f.getRelativePath() as file, featureType, ref.toString() as feature
         EOF
 
-    # ========================== 最终核心修改点 1 ==========================
-    # 步骤3: 初始化CodeQL，并明确指定数据库的创建位置
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: cpp
-        queries: ./.github/codeql-queries/FeatureExtraction.ql
-        # 我们给数据库一个明确的名字和位置
-        db-location: ./codeql-database
-
-    # 步骤4: 在容器内安装依赖
+    # 步骤3: 在容器内安装依赖和CodeQL CLI
     - name: Install dependencies and CodeQL CLI in container
       run: |
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
         apt-get install -y git ca-certificates wget unzip python3 python3-pip
         apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
-
-    # 步骤5: 手动安装并授权CodeQL CLI
-    - name: Install and permission CodeQL CLI
-      run: |
+        
         wget https://github.com/github/codeql-cli-binaries/releases/download/v2.16.2/codeql-linux64.zip
         unzip codeql-linux64.zip
         mv codeql /usr/local/share/
         chmod +x /usr/local/share/codeql/codeql
-
-    # 步骤6: 编译项目
-    - name: Build project
+        
+    # ========================== 最终核心修改点 1 ==========================
+    # 步骤4: 使用'codeql database create'来创建数据库并编译代码
+    # 这个命令会确保编译过程被正确追踪
+    - name: Create CodeQL database and build the project
       run: |
-        cmake .
-        make -j2
+        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="cmake . && make -j2"
+        
+    # 步骤5: (新) 升级数据库。这是一个好习惯，可以应用最新的库更新。
+    - name: Upgrade CodeQL database
+      run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
     # ========================== 最终核心修改点 2 ==========================
-    # 步骤7: 运行分析，并明确告诉它要分析哪个数据库
-    - name: Perform CodeQL Analysis
-      run: /usr/local/share/codeql/codeql database analyze ./codeql-database ./.github/codeql-queries/FeatureExtraction.ql --format=sarif-latest --output=results/cpp.sarif
+    # 步骤6: 运行分析，并明确告诉它要分析哪个数据库
+    - name: Perform CodeQL Analysis and decode results
+      run: |
+        # 我们将分析和解码合并在一步，避免中间文件问题
+        /usr/local/share/codeql/codeql database analyze ./codeql-database ./.github/codeql-queries/FeatureExtraction.ql --format=csv --output=features.csv
 
-    # 步骤8: (新) 增加一个调试步骤，检查结果文件是否生成
-    - name: Check for generated files
-      run: ls -R results
+    # 步骤7: 将CSV转换为最终的JSON格式
+    - name: Convert CSV to JSON
+      run: |
+        cat <<'PY_EOF' > csv_to_json.py
+        import csv, json, sys
+        from collections import defaultdict
+        def csv_to_json(csv_path, json_path):
+            features_by_file = defaultdict(set)
+            try:
+                with open(csv_path, 'r', newline='', encoding='utf-8') as f:
+                    r = csv.reader(f); next(r, None)
+                    for row in r:
+                        if len(row)==3: features_by_file[row[0]].add(row[2])
+            except FileNotFoundError: print(f"W: CSV '{csv_path}' not found.")
+            out = {f: sorted(list(fs)) for f, fs in features_by_file.items()}
+            with open(json_path, 'w', encoding='utf-8') as f: json.dump(out, f, indent=2)
+            print(f"OK: Processed {len(out)} files.")
+        if __name__ == "__main__": csv_to_json(sys.argv[1], sys.argv[2])
+        PY_EOF
+        python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤9: 将SARIF转换为最终的JSON格式 (如果需要的话)
-    # 我们可以先跳过这一步，确保能拿到SARIF文件
-    # ...
-
-    # 步骤10: 上传整个results目录以供调试
-    - name: Upload analysis results
+    # 步骤8: 上传最终的JSON文件
+    - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
-        name: codeql-raw-results
-        path: results
+        name: extracted-features-json
+        path: extracted_features.json
     # ====================================================================
