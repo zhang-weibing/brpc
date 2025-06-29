@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction"
+name: "CodeQL Feature Extraction (The Real Final Solution)"
 
 on:
   workflow_dispatch:
@@ -22,11 +22,23 @@ jobs:
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # 步骤2: 动态创建CodeQL查询文件
-    - name: Create CodeQL Query File
+    # ========================== 核心修改点 1 ==========================
+    # 步骤2: 动态创建CodeQL查询包 (包含qlpack.yml和.ql文件)
+    - name: Create CodeQL Query Pack
       run: |
-        mkdir -p ./.github/codeql-queries
-        cat <<'EOF' > ./.github/codeql-queries/FeatureExtraction.ql
+        # 创建查询包的根目录
+        mkdir -p codeql-custom-queries
+        
+        # 创建 qlpack.yml 文件
+        cat <<'QLPACK_EOF' > codeql-custom-queries/qlpack.yml
+        name: custom/feature-extraction
+        version: 0.0.1
+        libraryPathDependencies:
+          - codeql/cpp-all
+        QLPACK_EOF
+
+        # 创建查询文件
+        cat <<'QL_EOF' > codeql-custom-queries/FeatureExtraction.ql
         /**
          * @name Extract Features for Cohesion Analysis (v2)
          * @description This query extracts all referenced symbols for each source file.
@@ -45,49 +57,47 @@ jobs:
           ) and
           ref.toString() != ""
         select f.getRelativePath() as file, featureType, ref.toString() as feature
-        EOF
-
-    # 步骤3: 在容器内安装依赖和CodeQL CLI
-    - name: Install dependencies and CodeQL CLI in container
+        QL_EOF
+        
+    # 步骤3: 安装所有依赖
+    - name: Install dependencies and CodeQL CLI
       run: |
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
         apt-get install -y git ca-certificates wget unzip python3 python3-pip
         apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
-        
         wget https://github.com/github/codeql-cli-binaries/releases/download/v2.16.2/codeql-linux64.zip
         unzip codeql-linux64.zip
         mv codeql /usr/local/share/
         chmod +x /usr/local/share/codeql/codeql
         
-    # ========================== 最终核心修改点 1 ==========================
-    # 步骤4: (新) 创建一个包含所有编译步骤的构建脚本
+    # 步骤4: 创建构建脚本
     - name: Create build script
       run: |
         cat <<'EOF' > build.sh
         #!/bin/bash
-        set -e # 如果任何命令失败，则立即退出
+        set -e
         cmake .
         make -j2
         EOF
         chmod +x build.sh
 
-    # ========================== 最终核心修改点 2 ==========================
-    # 步骤5: 使用'codeql database create'，并让它执行我们刚刚创建的脚本
-    - name: Create CodeQL database by running the build script
+    # 步骤5: 创建CodeQL数据库
+    - name: Create CodeQL database
       run: |
-        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --command="./build.sh"
+        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
         
     # 步骤6: 升级数据库
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # 步骤7: 运行分析并解码结果
+    # ========================== 核心修改点 2 ==========================
+    # 步骤7: 运行分析，这次我们直接指定查询包的目录
     - name: Perform CodeQL Analysis and decode results
       run: |
-        /usr/local/share/codeql/codeql database analyze ./codeql-database ./.github/codeql-queries/FeatureExtraction.ql --format=csv --output=features.csv
+        /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
 
-    # 步骤8: 将CSV转换为最终的JSON格式
+    # 步骤8: 将CSV转换为JSON
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -108,10 +118,9 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤9: 上传最终的JSON文件
+    # 步骤9: 上传JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
         name: extracted-features-json
         path: extracted_features.json
-    # ====================================================================
