@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction"
+name: "CodeQL Feature Extraction (Final Correct Path)"
 
 on:
   workflow_dispatch:
@@ -16,36 +16,20 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 检出代码
+    # 步骤1: 检出包含我们查询包的master分支，放到'query-repo'目录
+    - name: Checkout query pack repository
+      uses: actions/checkout@v4
+      with:
+        # 这个 'path' 参数是可选的，但为了清晰，我们保留它
+        path: query-repo
+    
+    # 步骤2: 检出我们要分析的旧版本brpc代码，放到'source-repo'目录
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
+        repository: apache/brpc
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
-
-    # 步骤2: 动态创建CodeQL查询文件
-    - name: Create CodeQL Query File
-      run: |
-        mkdir -p ./my-query
-        cat <<'EOF' > ./my-query/FeatureExtraction.ql
-        /**
-         * @name Extract Features for Cohesion Analysis (v3)
-         * @description This query extracts all referenced functions, variables and types for each source file.
-         * @kind table
-         */
-        import cpp
-
-        from File f, Locatable ref, string featureType
-        where
-          (f.getExtension() = "cpp" or f.getExtension() = "h" or f.getExtension() = "hpp") and
-          f.getRelativePath().matches("src/brpc/%") and
-          (
-            exists(Call c | c.getLocation().getFile() = f and ref = c.getTarget() and featureType = "FunctionCall") or
-            exists(VariableAccess va | va.getLocation().getFile() = f and ref = va.getTarget() and featureType = "VariableAccess") or
-            exists(TypeAccess ta | ta.getLocation().getFile() = f and ref = ta.getType() and featureType = "TypeAccess")
-          ) and
-          ref.toString() != ""
-        select f.getRelativePath() as file, featureType, ref.toString() as feature
-        EOF
+        path: source-repo
         
     # 步骤3: 安装所有依赖
     - name: Install dependencies and CodeQL CLI
@@ -61,6 +45,7 @@ jobs:
         
     # 步骤4: 创建构建脚本
     - name: Create build script
+      working-directory: ./source-repo # 进入源代码目录
       run: |
         cat <<'EOF' > build.sh
         #!/bin/bash
@@ -73,20 +58,26 @@ jobs:
     # 步骤5: 创建CodeQL数据库
     - name: Create CodeQL database
       run: |
-        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
+        # 我们告诉CodeQL，源代码在'source-repo'目录里
+        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=./source-repo --command="./source-repo/build.sh"
         
-    # ========================== 最终核心修改点 ==========================
-    # 步骤6: 运行分析，并明确指定使用CLI自带的标准库
+    # 步骤6: 升级数据库
+    - name: Upgrade CodeQL database
+      run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
+
+    # ========================== 核心修改点 ==========================
+    # 步骤7: 安装查询依赖包，路径现在是正确的
+    - name: Install CodeQL packs for the query
+      # 我们告诉pack install去哪里找我们的查询包
+      run: /usr/local/share/codeql/codeql pack install ./query-repo/.github/codeql-queries
+
+    # 步骤8: 运行分析，并明确指定查询包的路径
     - name: Perform CodeQL Analysis and decode results
       run: |
-        # --search-path 指定了CodeQL应该去哪里寻找标准库。我们直接指向CLI自带的库。
-        # 这将完全忽略掉所有我们之前下载的、有问题的扩展包。
-        /usr/local/share/codeql/codeql database analyze ./codeql-database ./my-query/FeatureExtraction.ql \
-          --search-path=/usr/local/share/codeql/qlpacks \
-          --format=csv \
-          --output=features.csv
+        # 我们直接告诉analyze命令去哪里找我们的查询包
+        /usr/local/share/codeql/codeql database analyze ./codeql-database ./query-repo/.github/codeql-queries --format=csv --output=features.csv
 
-    # 步骤7: 将CSV转换为JSON
+    # 步骤9: 将CSV转换为JSON
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -107,7 +98,7 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤8: 上传JSON文件
+    # 步骤10: 上传JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
