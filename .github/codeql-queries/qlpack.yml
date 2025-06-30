@@ -1,0 +1,4 @@
+name: custom/brpc-feature-extraction
+version: 0.0.1
+libraryPathDependencies:
+  - codeql/cpp-all
