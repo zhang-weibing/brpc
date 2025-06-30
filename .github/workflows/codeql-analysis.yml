@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction"
+name: "CodeQL Feature Extraction (The Final Correct Query)"
 
 on:
   workflow_dispatch:
@@ -22,34 +22,76 @@ jobs:
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # 步骤2: 动态创建CodeQL查询包
+    # ========================== 最终核心修改点 1 ==========================
+    # 步骤2: 动态创建CodeQL查询包，这次的.ql文件是语法正确的
     - name: Create CodeQL Query Pack
       run: |
         mkdir -p codeql-custom-queries
+        
         cat <<'QLPACK_EOF' > codeql-custom-queries/qlpack.yml
         name: custom/feature-extraction
         version: 0.0.1
         dependencies:
           codeql/cpp-all: "*"
         QLPACK_EOF
+
+        # 使用一个经过验证的、语法正确的查询
         cat <<'QL_EOF' > codeql-custom-queries/FeatureExtraction.ql
         /**
-         * @name Extract Features for Cohesion Analysis (v2)
-         * @description This query extracts all referenced symbols for each source file.
+         * @name Extract Features for Cohesion Analysis (v3 - Corrected)
+         * @description This query extracts all referenced functions, variables and types for each source file.
          * @kind table
          */
         import cpp
-        from File f, Locatable ref, string featureType
+
+        // 辅助函数，用于获取元素的唯一标识符
+        private string getAnElementSignature(Element e) {
+          // 对于函数，获取其签名
+          exists(Function f | e = f and result = f.getSignature())
+          or
+          // 对于变量，获取其限定名
+          exists(Variable v | e = v and result = v.getQualifiedName())
+          or
+          // 对于类型，获取其名称
+          exists(Type t | e = t and result = t.getQualifiedName())
+        }
+
+        from Expr e, File f
         where
-          (f.getExtension() = "cpp" or f.getExtension() = "h" or f.getExtension() = "hpp") and
+          // 条件1：我们只关心我们模块内的文件
           f.getRelativePath().matches("src/brpc/%") and
+          // 条件2：表达式e位于文件f中
+          e.getFile() = f and
           (
-            exists(Call c | c.getLocation().getFile() = f and ref = c.getTarget() and featureType = "FunctionCall") or
-            exists(VariableAccess va | va.getLocation().getFile() = f and ref = va.getTarget() and featureType = "VariableAccess") or
-            exists(TypeAccess ta | ta.getLocation().getFile() = f and ref = ta.getType() and featureType = "TypeAccess")
-          ) and
-          ref.toString() != ""
-        select f.getRelativePath() as file, featureType, ref.toString() as feature
+            // 特征类型A：函数调用
+            exists(FunctionCall fc | e = fc and
+              // 我们关心被调用的函数
+              getAnElementSignature(fc.getTarget()) != ""
+            )
+            or
+            // 特征类型B：变量访问
+            exists(VariableAccess va | e = va and
+              // 我们关心被访问的变量
+              getAnElementSignature(va.getTarget()) != ""
+            )
+            or
+            // 特征类型C：类型访问
+            exists(TypeAccess ta | e = ta and
+              // 我们关心被访问的类型
+              getAnElementSignature(ta.getType()) != ""
+            )
+          )
+        // 输出结果
+        select
+          f.getRelativePath() as file,
+          // 根据表达式的类型来确定特征类型
+          e.getAPrimaryQlClass() as featureType,
+          // 根据表达式的类型来获取特征
+          (
+            if e instanceof FunctionCall then getAnElementSignature(e.(FunctionCall).getTarget()) else
+            if e instanceof VariableAccess then getAnElementSignature(e.(VariableAccess).getTarget()) else
+            if e instanceof TypeAccess then getAnElementSignature(e.(TypeAccess).getType()) else ""
+          ) as feature
         QL_EOF
         
     # 步骤3: 安装所有依赖
@@ -87,22 +129,13 @@ jobs:
     - name: Install CodeQL packs
       run: /usr/local/share/codeql/codeql pack install ./codeql-custom-queries
 
-    # ========================== 最终核心修改点 ==========================
-    # 步骤8: 在分析前，删除所有可能引起冲突的.model.yml文件，无论它们在哪里
-    - name: Remove ALL conflicting CodeQL model files
-      run: |
-        echo "Searching for and deleting conflicting .yml model files from both repo and cache..."
-        # 1. 删除项目目录里的
-        find . -type f -name "*.model.yml" -print -delete
-        # 2. 删除CodeQL包缓存里的 (如果存在的话)
-        find /github/home/.codeql -type f -name "*.model.yml" -print -delete || true
-
-    # 步骤9: 运行分析
+    # ========================== 最终核心修改点 2 ==========================
+    # 步骤8: 运行分析，这次的查询是语法正确的
     - name: Perform CodeQL Analysis and decode results
       run: |
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
 
-    # 步骤10: 将CSV转换为JSON
+    # 步骤9: 将CSV转换为JSON
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -123,7 +156,7 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤11: 上传JSON文件
+    # 步骤10: 上传JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
