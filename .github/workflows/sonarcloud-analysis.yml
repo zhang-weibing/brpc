@@ -1,5 +1,5 @@
 # 文件路径: .github/workflows/sonarcloud-analysis.yml
-# 最终方案 - 使用正确的SonarCloud Action并增加调试日志
+# 最终方案 - 使用正确的配置传递方式
 
 name: SonarCloud C++ Analysis
 
@@ -18,33 +18,29 @@ jobs:
           ref: '50eed9b008e7eff012e788a8a328901f68373579'
           fetch-depth: 0
 
-      # 步骤2: 设置SonarCloud环境
-      - name: Set up SonarCloud
-        uses: SonarSource/sonarcloud-github-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          
-      # 步骤3: 安装所有依赖
+      # 步骤2: 安装所有依赖
       - name: Install all dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
       # ========================== 最终核心修改点 ==========================
-      # 步骤4: 构建项目并进行分析，增加 -X 调试标志
-      - name: Build project and run SonarCloud analysis
+      # 步骤3: 使用正确的官方SonarCloud Action，并通过环境变量传递所有配置
+      - name: Build and analyze with SonarCloud
+        uses: SonarSource/sonarcloud-github-action@v2
         env:
+          # 这两个是认证必需的
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          # 1. 包裹编译命令
-          build-wrapper-linux-x86-64 --out-dir bw-output cmake .
-          build-wrapper-linux-x86-64 --out-dir bw-output make -j2
-
-          # 2. 运行SonarScanner，并用 -X 参数开启详细调试日志
-          # !!! 重要：请再次确认下面的KEY与你SonarCloud官网上复制的值完全一致 !!!
-          sonar-scanner -X \
-            -Dsonar.projectKey=zhang-weibing_brpc \
-            -Dsonar.organization=zhang-weibing \
+        with:
+          # 我们把构建和扫描命令，作为参数直接传递给这个Action
+          # 这确保了所有配置和环境变量都能被正确设置和使用
+          args: >
+            -Dsonar.organization=zhang-weibing
+            -Dsonar.projectKey=zhang-weibing_brpc
             -Dsonar.cfamily.build-wrapper-output=bw-output
-    # ==============================================================
+          # 我们把构建命令也放在这里，让Action来管理
+          build-sh: |
+            build-wrapper-linux-x86-64 --out-dir bw-output cmake .
+            build-wrapper-linux-x86-64 --out-dir bw-output make -j2
+      # ==============================================================
