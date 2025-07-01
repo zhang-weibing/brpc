@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (Simplified)"
+name: "CodeQL Feature Extraction (Simplified & Robust Path)"
 
 on:
   workflow_dispatch:
@@ -16,23 +16,21 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 检出代码。这次我们检出master分支，因为我们的配置文件在上面。
-    # 然后我们会再检出旧代码。
-    - name: Checkout master branch to get workflow files
+    # 步骤1: 检出master分支以获取配置文件
+    - name: Checkout master branch to get config files
       uses: actions/checkout@v4
       with:
-        # 明确检出包含配置文件的master分支
         ref: 'master' 
         path: 'main'
 
+    # 步骤2: 检出旧代码进行分析
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
-        # 检出你想要分析的旧commit
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
         path: 'source'
 
-    # 步骤2: 安装所有依赖
+    # 步骤3: 安装所有依赖
     - name: Install dependencies and CodeQL CLI
       run: |
         export DEBIAN_FRONTEND=noninteractive
@@ -44,37 +42,45 @@ jobs:
         mv codeql /usr/local/share/
         chmod +x /usr/local/share/codeql/codeql
 
-    # 步骤3: 创建构建脚本
+    # ========================== 最终核心修改点 1 ==========================
+    # 步骤4: 创建构建脚本，不切换工作目录，使用明确路径
     - name: Create build script
-      working-directory: ./source # 切换到源代码目录
       run: |
-        cat <<'EOF' > build.sh
+        cat <<'EOF' > ./source/build.sh
         #!/bin/bash
         set -e
+        # 进入源代码目录进行编译
+        cd "$(dirname "$0")"
         cmake .
         make -j2
         EOF
-        chmod +x build.sh
+        chmod +x ./source/build.sh
 
-    # 步骤4: 创建CodeQL数据库
+    # 步骤5: (新) 增加一个调试步骤，验证脚本是否存在
+    - name: Verify build script existence
+      run: ls -l ./source/build.sh
+
+    # 步骤6: 创建CodeQL数据库
     - name: Create CodeQL database
       run: |
         /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=./source --command="./source/build.sh"
 
-    # 步骤5: 升级数据库
+    # ====================================================================
+        
+    # 步骤7: 升级数据库
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # 步骤6: 安装查询依赖包
+    # 步骤8: 安装查询依赖包
     - name: Install CodeQL packs
       run: /usr/local/share/codeql/codeql pack install ./main/.github/codeql-queries
 
-    # 步骤7: 运行分析
+    # 步骤9: 运行分析
     - name: Perform CodeQL Analysis and decode results
       run: |
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./main/.github/codeql-queries --format=csv --output=features.csv
 
-    # 步骤8: 将CSV转换为JSON
+    # 步骤10: 将CSV转换为JSON
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -95,7 +101,7 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤9: 上传JSON文件
+    # 步骤11: 上传JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
