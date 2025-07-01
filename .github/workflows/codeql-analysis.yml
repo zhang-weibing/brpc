@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (The Definitive Manual Build)"
+name: "CodeQL Feature Extraction (Definitive Manual Build)"
 
 on:
   workflow_dispatch:
@@ -7,6 +7,7 @@ jobs:
   extract-features:
     runs-on: ubuntu-latest
     
+    # 1. 使用Docker容器确保环境稳定
     container:
       image: ubuntu:20.04
     
@@ -22,11 +23,12 @@ jobs:
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # 步骤2: 动态创建我们自己的CodeQL查询包
+    # 步骤2: 动态创建我们自己的CodeQL查询包 (包含.ql和qlpack.yml)
     - name: Create our CodeQL Query Pack
       run: |
         mkdir -p codeql-custom-queries
         
+        # 创建 qlpack.yml 来声明依赖
         cat <<'QLPACK_EOF' > codeql-custom-queries/qlpack.yml
         name: custom/feature-extraction
         version: 0.0.1
@@ -34,6 +36,7 @@ jobs:
           codeql/cpp-all: "*"
         QLPACK_EOF
 
+        # 创建我们的查询文件
         cat <<'QL_EOF' > codeql-custom-queries/FeatureExtraction.ql
         /**
          * @name Extract Features for Cohesion Analysis (v3)
@@ -78,7 +81,7 @@ jobs:
         EOF
         chmod +x build.sh
 
-    # 步骤5: 创建CodeQL数据库
+    # 步骤5: 创建CodeQL数据库，并执行构建脚本
     - name: Create CodeQL database
       run: /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
         
@@ -86,20 +89,15 @@ jobs:
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # 步骤7: 安装查询依赖包
+    # 步骤7: 安装查询包的依赖 (下载cpp-all)
     - name: Install CodeQL packs
       run: /usr/local/share/codeql/codeql pack install ./codeql-custom-queries
 
-    # ========================== 最终核心修改点 ==========================
-    # 步骤8: (新) 在分析前，物理删除所有可能引起冲突的brpc自带的CodeQL模型文件
+    # 步骤8: 删除brpc自带的不兼容的模型文件
     - name: Remove conflicting CodeQL model files
-      run: |
-        echo "Searching for and deleting potentially conflicting .yml model files..."
-        # 查找所有名为*.model.yml的文件并删除它们，-print会打印出被删除的文件名
-        find . -type f -name "*.model.yml" -print -delete
-        echo "Conflicting files removed."
+      run: find . -type f -name "*.model.yml" -print -delete
 
-    # 步骤9: 运行分析，现在不会再找到不兼容的模型文件了
+    # 步骤9: 运行分析并直接解码为CSV
     - name: Perform CodeQL Analysis and decode results
       run: |
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
@@ -125,10 +123,9 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤11: 上传JSON文件
+    # 步骤11: 上传最终的JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
         name: extracted-features-json
         path: extracted_features.json
-    # ====================================================================
