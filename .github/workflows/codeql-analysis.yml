@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (The Ultimate Back-to-Basics)"
+name: "CodeQL Feature Extraction (The Real Final Final Solution)"
 
 on:
   workflow_dispatch:
@@ -22,11 +22,22 @@ jobs:
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # 步骤2: 动态创建我们自己的查询文件 (不再需要qlpack.yml)
-    - name: Create CodeQL Query File
+    # ========================== 最终核心修改点 1 ==========================
+    # 步骤2: 动态创建CodeQL查询包 (qlpack.yml是必须的！)
+    - name: Create CodeQL Query Pack
       run: |
-        mkdir -p my-custom-query
-        cat <<'QL_EOF' > my-custom-query/FeatureExtraction.ql
+        mkdir -p codeql-custom-queries
+        
+        # 创建 qlpack.yml 文件，这是查询的“身份证”
+        cat <<'QLPACK_EOF' > codeql-custom-queries/qlpack.yml
+        name: custom/feature-extraction
+        version: 0.0.1
+        dependencies:
+          codeql/cpp-all: "*"
+        QLPACK_EOF
+
+        # 创建查询文件
+        cat <<'QL_EOF' > codeql-custom-queries/FeatureExtraction.ql
         /**
          * @name Extract Features for Cohesion Analysis (v3)
          * @description This query extracts all referenced functions, variables and types for each source file.
@@ -47,7 +58,7 @@ jobs:
         select f.getRelativePath() as file, featureType, ref.toString() as feature
         QL_EOF
         
-    # 步骤3: 安装所有依赖和CodeQL CLI
+    # 步骤3: 安装所有依赖
     - name: Install dependencies and CodeQL CLI
       run: |
         export DEBIAN_FRONTEND=noninteractive
@@ -74,14 +85,13 @@ jobs:
     - name: Create CodeQL database
       run: /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
         
-    # ========================== 最终核心修改点 ==========================
-    # 我们不再需要 pack install 和 database upgrade
+    # ========================== 最终核心修改点 2 ==========================
+    # 我们不再需要 pack install 或 upgrade database
     
-    # 步骤6: 运行分析，并用--search-path明确指定使用CLI自带的标准库
+    # 步骤6: 运行分析，同时指定查询包和标准库的搜索路径
     - name: Perform CodeQL Analysis and decode results
       run: |
-        # --search-path 指向CLI解压后自带的qlpacks目录，这是最干净的库
-        /usr/local/share/codeql/codeql database analyze ./codeql-database ./my-custom-query/FeatureExtraction.ql \
+        /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries \
           --search-path=/usr/local/share/codeql/qlpacks \
           --format=csv \
           --output=features.csv
