@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (The Final Co-location)"
+name: "CodeQL Feature Extraction (The Ultimate Back-to-Basics v2)"
 
 on:
   workflow_dispatch:
@@ -16,27 +16,16 @@ jobs:
       contents: read
 
     steps:
-    # 步骤1: 只检出你想要分析的旧代码
+    # 步骤1: 检出代码
     - name: Checkout target source code
       uses: actions/checkout@v4
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
 
-    # ========================== 核心修改点 1 ==========================
-    # 步骤2: 在源代码的根目录下，创建CodeQL查询包
-    - name: Create CodeQL Query Pack inside source code
+    # 步骤2: 动态创建查询文件 (不再创建qlpack.yml，也不再创建包目录)
+    - name: Create CodeQL Query File
       run: |
-        # 直接在当前工作目录创建，它与源代码在一起
-        mkdir -p codeql-custom-queries
-        
-        cat <<'QLPACK_EOF' > codeql-custom-queries/qlpack.yml
-        name: custom/feature-extraction
-        version: 0.0.1
-        dependencies:
-          codeql/cpp-all: "*"
-        QLPACK_EOF
-
-        cat <<'QL_EOF' > codeql-custom-queries/FeatureExtraction.ql
+        cat <<'QL_EOF' > FeatureExtraction.ql
         /**
          * @name Extract Features for Cohesion Analysis (v3)
          * @description This query extracts all referenced functions, variables and types for each source file.
@@ -80,17 +69,21 @@ jobs:
         EOF
         chmod +x build.sh
 
-    # ========================== 核心修改点 2 ==========================
-    # 步骤5: 创建CodeQL数据库。--source-root=. 表示当前目录
+    # 步骤5: 创建CodeQL数据库
     - name: Create CodeQL database
-      run: /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
+      run: |
+        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=. --command="./build.sh"
         
-    # 我们不再需要 pack install 或 upgrade
-
-    # 步骤6: 运行分析。现在查询和数据库都在同一个上下文中
+    # ========================== 最终核心修改点 ==========================
+    # 我们不再需要 pack install 或 upgrade database
+    
+    # 步骤6: 运行分析，明确指定查询文件和标准库的搜索路径
     - name: Perform CodeQL Analysis and decode results
       run: |
-        /usr/local/share/codeql/codeql database analyze ./codeql-database ./codeql-custom-queries --format=csv --output=features.csv
+        /usr/local/share/codeql/codeql database analyze ./codeql-database ./FeatureExtraction.ql \
+          --search-path=/usr/local/share/codeql/qlpacks \
+          --format=csv \
+          --output=features.csv
 
     # 步骤7: 将CSV转换为JSON
     - name: Convert CSV to JSON
