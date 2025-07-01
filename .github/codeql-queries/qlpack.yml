@@ -1,4 +1,6 @@
-name: custom/brpc-feature-extraction
+# 文件路径: .github/codeql-queries/qlpack.yml
+
+name: custom/feature-extraction
 version: 0.0.1
-libraryPathDependencies:
-  - codeql/cpp-all
+dependencies:
+  codeql/cpp-all: "*"
