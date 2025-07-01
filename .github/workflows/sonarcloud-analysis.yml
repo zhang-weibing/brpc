@@ -1,5 +1,5 @@
 # 文件路径: .github/workflows/sonarcloud-analysis.yml
-# 最终方案 - 使用正确的配置传递方式
+# 最终方案 - 分离编译和分析，手动准备工具
 
 name: SonarCloud C++ Analysis
 
@@ -8,6 +8,7 @@ on:
 
 jobs:
   analysis:
+    name: Analysis
     runs-on: ubuntu-latest
 
     steps:
@@ -24,23 +25,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-      # ========================== 最终核心修改点 ==========================
-      # 步骤3: 使用正确的官方SonarCloud Action，并通过环境变量传递所有配置
-      - name: Build and analyze with SonarCloud
-        uses: SonarSource/sonarcloud-github-action@v2
+      # 步骤3: 手动下载并准备 build-wrapper 和 sonar-scanner
+      - name: Download SonarCloud tools
+        run: |
+          # 下载 build-wrapper 并添加到 PATH
+          curl -sSLo build-wrapper.zip "https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip"
+          unzip -o build-wrapper.zip
+          echo "$(pwd)/build-wrapper-linux-x86" >> $GITHUB_PATH
+          
+          # 下载 sonar-scanner 并添加到 PATH
+          curl -sSLo sonar-scanner.zip "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-latest-linux.zip"
+          unzip -o sonar-scanner.zip
+          SCANNER_DIR=$(find . -maxdepth 1 -type d -name "sonar-scanner-*-linux" -print | head -n 1)
+          echo "$SCANNER_DIR/bin" >> $GITHUB_PATH
+
+      # 步骤4: 使用 build-wrapper 运行编译
+      - name: Build with build-wrapper
+        run: |
+          build-wrapper-linux-x86-64 --out-dir bw-output cmake .
+          build-wrapper-linux-x86-64 --out-dir bw-output make -j2
+      
+      # 步骤5: 运行 SonarCloud 分析
+      - name: Analyze with SonarScanner
         env:
-          # 这两个是认证必需的
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          # 我们把构建和扫描命令，作为参数直接传递给这个Action
-          # 这确保了所有配置和环境变量都能被正确设置和使用
-          args: >
-            -Dsonar.organization=zhang-weibing
-            -Dsonar.projectKey=zhang-weibing_brpc
+        run: |
+          sonar-scanner \
+            -Dsonar.organization=zhang-weibing \
+            -Dsonar.projectKey=zhang-weibing_brpc \
             -Dsonar.cfamily.build-wrapper-output=bw-output
-          # 我们把构建命令也放在这里，让Action来管理
-          build-sh: |
-            build-wrapper-linux-x86-64 --out-dir bw-output cmake .
-            build-wrapper-linux-x86-64 --out-dir bw-output make -j2
-      # ==============================================================
