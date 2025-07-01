@@ -43,8 +43,7 @@ jobs:
           build-wrapper-linux-x86-64 --out-dir bw-output make -j2
 
           # 2. 运行sonar-scanner进行分析
-          # !!! 重要：请确保将下面的KEY替换成你自己的真实值 !!!
           sonar-scanner \
-            -Dsonar.projectKey=你的项目KEY \
-            -Dsonar.organization=你的组织KEY \
+            -Dsonar.projectKey=zhang-weibing_brpc \
+            -Dsonar.organization=zhang-weibing \
             -Dsonar.cfamily.build-wrapper-output=bw-output
