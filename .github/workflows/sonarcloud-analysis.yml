@@ -1,53 +1,50 @@
 # 文件路径: .github/workflows/sonarcloud-analysis.yml
-# 最终方案 - 使用正确的SonarCloud Action
+# 最终方案 - 使用正确的SonarCloud Action并增加调试日志
 
 name: SonarCloud C++ Analysis
 
 on:
-  # 允许我们手动从GitHub的Actions页面触发这个工作流
   workflow_dispatch:
 
 jobs:
   analysis:
-    # 使用一个标准的Ubuntu虚拟机
     runs-on: ubuntu-latest
 
     steps:
-      # 步骤1: 检出你指定的commit版本的代码
+      # 步骤1: 检出代码
       - name: Checkout target source code
         uses: actions/checkout@v4
         with:
           ref: '50eed9b008e7eff012e788a8a328901f68373579'
-          fetch-depth: 0 # SonarCloud需要完整的git历史
+          fetch-depth: 0
 
-      # ========================== 核心修改点 ==========================
-      # 步骤2: 使用正确的官方SonarCloud Action来准备环境
-      # 这个Action会自动处理扫描器的下载和设置
+      # 步骤2: 设置SonarCloud环境
       - name: Set up SonarCloud
         uses: SonarSource/sonarcloud-github-action@v2
-        # 我们把令牌放在这里，更符合这个Action的用法
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # GITHUB_TOKEN for SonarCloud pull request decoration
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}      # SONAR_TOKEN for SonarCloud analysis
-      # ==============================================================
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           
-      # 步骤3: 安装所有我们已知的编译依赖
+      # 步骤3: 安装所有依赖
       - name: Install all dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-      # 步骤4: 构建项目并进行分析
+      # ========================== 最终核心修改点 ==========================
+      # 步骤4: 构建项目并进行分析，增加 -X 调试标志
       - name: Build project and run SonarCloud analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          # 1. 使用build-wrapper包裹编译命令
+          # 1. 包裹编译命令
           build-wrapper-linux-x86-64 --out-dir bw-output cmake .
           build-wrapper-linux-x86-64 --out-dir bw-output make -j2
 
-          # 2. 运行sonar-scanner进行分析
-          sonar-scanner \
+          # 2. 运行SonarScanner，并用 -X 参数开启详细调试日志
+          # !!! 重要：请再次确认下面的KEY与你SonarCloud官网上复制的值完全一致 !!!
+          sonar-scanner -X \
             -Dsonar.projectKey=zhang-weibing_brpc \
             -Dsonar.organization=zhang-weibing \
             -Dsonar.cfamily.build-wrapper-output=bw-output
+    # ==============================================================
