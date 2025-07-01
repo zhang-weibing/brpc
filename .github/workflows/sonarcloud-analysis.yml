@@ -1,7 +1,4 @@
-# 文件路径: .github/workflows/sonarcloud-analysis.yml
-# 最终方案 - 分离编译和分析，手动准备工具
-
-name: SonarCloud C++ Analysis
+name: "SonarCloud C++ Analysis (Robust Download)"
 
 on:
   workflow_dispatch:
@@ -25,27 +22,47 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-      # 步骤3: 手动下载并准备 build-wrapper 和 sonar-scanner
+      # 步骤3: 缓存SonarCloud工具包
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+      
+      # ========================== 最终核心修改点 ==========================
+      # 步骤4: 使用更健壮的方式下载并准备 build-wrapper 和 sonar-scanner
       - name: Download SonarCloud tools
         run: |
-          # 下载 build-wrapper 并添加到 PATH
-          curl -sSLo build-wrapper.zip "https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip"
+          # 使用 -fSL 参数确保下载失败时会报错
+          echo "Downloading build-wrapper..."
+          curl -fSL -o build-wrapper.zip "https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip"
           unzip -o build-wrapper.zip
           echo "$(pwd)/build-wrapper-linux-x86" >> $GITHUB_PATH
+
+          echo "Downloading sonar-scanner..."
+          curl -fSL -o sonar-scanner.zip "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-latest-linux.zip"
+          # 检查unzip是否成功
+          if ! unzip -o sonar-scanner.zip; then
+            echo "Error: Failed to unzip sonar-scanner.zip. File content:"
+            cat sonar-scanner.zip
+            exit 1
+          fi
           
-          # 下载 sonar-scanner 并添加到 PATH
-          curl -sSLo sonar-scanner.zip "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-latest-linux.zip"
-          unzip -o sonar-scanner.zip
-          SCANNER_DIR=$(find . -maxdepth 1 -type d -name "sonar-scanner-*-linux" -print | head -n 1)
+          SCANNER_DIR=$(find . -maxdepth 1 -type d -name "sonar-scanner-*-linux" | head -n 1)
+          if [ -z "$SCANNER_DIR" ]; then
+            echo "Error: Could not find sonar-scanner directory after unzipping."
+            exit 1
+          fi
           echo "$SCANNER_DIR/bin" >> $GITHUB_PATH
 
-      # 步骤4: 使用 build-wrapper 运行编译
+      # 步骤5: 使用 build-wrapper 运行编译
       - name: Build with build-wrapper
         run: |
           build-wrapper-linux-x86-64 --out-dir bw-output cmake .
           build-wrapper-linux-x86-64 --out-dir bw-output make -j2
       
-      # 步骤5: 运行 SonarCloud 分析
+      # 步骤6: 运行 SonarCloud 分析
       - name: Analyze with SonarScanner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,3 +72,4 @@ jobs:
             -Dsonar.organization=zhang-weibing \
             -Dsonar.projectKey=zhang-weibing_brpc \
             -Dsonar.cfamily.build-wrapper-output=bw-output
+    # ====================================================================
