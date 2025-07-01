@@ -1,4 +1,4 @@
-name: "CodeQL Feature Extraction (Simplified & Robust Path)"
+name: "CodeQL Feature Extraction (All-in-One Build Step)"
 
 on:
   workflow_dispatch:
@@ -42,45 +42,40 @@ jobs:
         mv codeql /usr/local/share/
         chmod +x /usr/local/share/codeql/codeql
 
-    # ========================== 最终核心修改点 1 ==========================
-    # 步骤4: 创建构建脚本，不切换工作目录，使用明确路径
-    - name: Create build script
+    # ========================== 最终核心修改点 ==========================
+    # 步骤4: 在一个步骤内完成所有构建和数据库创建工作
+    - name: Create CodeQL database
       run: |
-        cat <<'EOF' > ./source/build.sh
+        # 1. 进入源代码目录
+        cd ./source
+        
+        # 2. 创建构建脚本
+        cat <<'EOF' > build.sh
         #!/bin/bash
         set -e
-        # 进入源代码目录进行编译
-        cd "$(dirname "$0")"
         cmake .
         make -j2
         EOF
-        chmod +x ./source/build.sh
+        chmod +x build.sh
 
-    # 步骤5: (新) 增加一个调试步骤，验证脚本是否存在
-    - name: Verify build script existence
-      run: ls -l ./source/build.sh
+        # 3. 运行'codeql database create'，它现在可以轻易地找到'build.sh'
+        #    我们使用'..'来指向父目录，在那里创建数据库
+        /usr/local/share/codeql/codeql database create ../codeql-database --language=cpp --source-root=. --command="./build.sh"
 
-    # 步骤6: 创建CodeQL数据库
-    - name: Create CodeQL database
-      run: |
-        /usr/local/share/codeql/codeql database create ./codeql-database --language=cpp --source-root=./source --command="./source/build.sh"
-
-    # ====================================================================
-        
-    # 步骤7: 升级数据库
+    # 步骤5: 升级数据库
     - name: Upgrade CodeQL database
       run: /usr/local/share/codeql/codeql database upgrade ./codeql-database
 
-    # 步骤8: 安装查询依赖包
+    # 步骤6: 安装查询依赖包
     - name: Install CodeQL packs
       run: /usr/local/share/codeql/codeql pack install ./main/.github/codeql-queries
 
-    # 步骤9: 运行分析
+    # 步骤7: 运行分析
     - name: Perform CodeQL Analysis and decode results
       run: |
         /usr/local/share/codeql/codeql database analyze ./codeql-database ./main/.github/codeql-queries --format=csv --output=features.csv
 
-    # 步骤10: 将CSV转换为JSON
+    # 步骤8: 将CSV转换为JSON
     - name: Convert CSV to JSON
       run: |
         cat <<'PY_EOF' > csv_to_json.py
@@ -101,9 +96,10 @@ jobs:
         PY_EOF
         python3 csv_to_json.py features.csv extracted_features.json
         
-    # 步骤11: 上传JSON文件
+    # 步骤9: 上传JSON文件
     - name: Upload final JSON artifact
       uses: actions/upload-artifact@v4
       with:
         name: extracted-features-json
         path: extracted_features.json
+    # ====================================================================
