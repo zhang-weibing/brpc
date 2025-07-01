@@ -1,5 +1,5 @@
 # 文件路径: .github/workflows/sonarcloud-analysis.yml
-# 最终方案 - 使用SonarCloud进行云端分析
+# 最终方案 - 使用SonarCloud进行云端分析 (已更新Action版本)
 
 name: SonarCloud C++ Analysis
 
@@ -18,8 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: '50eed9b008e7eff012e788a8a328901f68373579'
-          # 获取所有git历史，这对于SonarCloud进行更准确的分析很重要
-          fetch-depth: 0
+          fetch-depth: 0 # SonarCloud需要完整的git历史
 
       # 步骤2: 安装所有我们已知的编译依赖
       - name: Install all dependencies
@@ -27,17 +26,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-      # 步骤3: 设置SonarCloud的扫描器工具
-      # 这会自动下载 build-wrapper 和 sonar-scanner
+      # ========================== 核心修改点 ==========================
+      # 步骤3: 设置SonarCloud的扫描器工具 
       - name: Set up SonarCloud scanner
-        uses: SonarSource/sonar-scanner-cli-action@v1.2
+        uses: SonarSource/sonar-scanner-cli-action@v2
+      # ==============================================================
             
       # 步骤4: 构建项目并进行分析
       - name: Build project and run SonarCloud analysis
         env:
-          # 从GitHub Secrets中读取你的令牌
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          # SonarCloud的Host URL是固定的
           SONAR_HOST_URL: https://sonarcloud.io
         run: |
           # 1. 使用build-wrapper“包裹”住你的编译命令
@@ -47,6 +45,6 @@ jobs:
           # 2. 运行sonar-scanner进行分析
           # !!! 重要：请确保将下面的KEY替换成你自己的真实值 !!!
           sonar-scanner \
-            -Dsonar.projectKey=zhang-weibing_brpc \
-            -Dsonar.organization=zhang-weibing \
+            -Dsonar.projectKey=你的项目KEY \
+            -Dsonar.organization=你的组织KEY \
             -Dsonar.cfamily.build-wrapper-output=bw-output
