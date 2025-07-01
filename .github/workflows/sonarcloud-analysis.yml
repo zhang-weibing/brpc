@@ -1,5 +1,5 @@
 # 文件路径: .github/workflows/sonarcloud-analysis.yml
-# 最终方案 - 使用SonarCloud进行云端分析 (已更新Action版本)
+# 最终方案 - 使用正确的SonarCloud Action
 
 name: SonarCloud C++ Analysis
 
@@ -20,25 +20,29 @@ jobs:
           ref: '50eed9b008e7eff012e788a8a328901f68373579'
           fetch-depth: 0 # SonarCloud需要完整的git历史
 
-      # 步骤2: 安装所有我们已知的编译依赖
+      # ========================== 核心修改点 ==========================
+      # 步骤2: 使用正确的官方SonarCloud Action来准备环境
+      # 这个Action会自动处理扫描器的下载和设置
+      - name: Set up SonarCloud
+        uses: SonarSource/sonarcloud-github-action@v2
+        # 我们把令牌放在这里，更符合这个Action的用法
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # GITHUB_TOKEN for SonarCloud pull request decoration
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}      # SONAR_TOKEN for SonarCloud analysis
+      # ==============================================================
+          
+      # 步骤3: 安装所有我们已知的编译依赖
       - name: Install all dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
-      # ========================== 核心修改点 ==========================
-      # 步骤3: 设置SonarCloud的扫描器工具 
-      - name: Set up SonarCloud scanner
-        uses: SonarSource/sonar-scanner-cli-action@v2
-      # ==============================================================
-            
       # 步骤4: 构建项目并进行分析
       - name: Build project and run SonarCloud analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
         run: |
-          # 1. 使用build-wrapper“包裹”住你的编译命令
+          # 1. 使用build-wrapper包裹编译命令
           build-wrapper-linux-x86-64 --out-dir bw-output cmake .
           build-wrapper-linux-x86-64 --out-dir bw-output make -j2
 
