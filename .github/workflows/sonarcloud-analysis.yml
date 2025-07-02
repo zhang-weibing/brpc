@@ -1,4 +1,4 @@
-name: "SonarCloud C++ Analysis (The Definitive Manual Way)"
+name: "SonarCloud C++ Analysis (The Final Patch)"
 
 on:
   workflow_dispatch:
@@ -22,41 +22,40 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev unzip
 
-    # ========================== 最终核心修改点 ==========================
-    # 步骤3: 手动下载并准备所有SonarCloud工具
+    # 步骤3: 手动下载并准备SonarCloud工具
     - name: Download and Prepare SonarCloud Tools
       run: |
-        # 下载 build-wrapper 并解压
         curl -fSL -o build-wrapper.zip "https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip"
         unzip -o build-wrapper.zip
-        
-        # 下载 sonar-scanner 并解压
         curl -fSL -o sonar-scanner.zip "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip"
         unzip -o sonar-scanner.zip
         
-        # 增加一个调试步骤，确认文件都已就位
-        echo "--- Listing current directory ---"
-        ls -l
+    # ========================== 最终核心修改点 ==========================
+    # 步骤4: (新) 在编译前，直接向CMakeLists.txt注入宏定义补丁
+    - name: Patch CMakeLists.txt to fix build errors
+      run: |
+        # 在CMakeLists.txt的顶部（project()命令之后）添加一行宏定义
+        # 这会告诉编译器忽略所有__has_attribute的检查
+        sed -i "/project(brpc C CXX)/a add_compile_definitions(__has_attribute\(x\)=0)" CMakeLists.txt
+        
+        # 打印修改后的文件内容以供调试
+        echo "--- Patched CMakeLists.txt ---"
+        head -n 20 CMakeLists.txt
+        echo "----------------------------"
 
-    # 步骤4: 使用build-wrapper的绝对路径来运行编译
+    # 步骤5: 使用build-wrapper的绝对路径来运行编译
     - name: Build with build-wrapper
       run: |
-        # 使用当前目录下的build-wrapper的绝对路径
         ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw-output cmake .
         ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw-output make -j2
       
-    # 步骤5: 使用sonar-scanner的绝对路径来运行分析
+    # 步骤6: 使用sonar-scanner的绝对路径来运行分析
     - name: Analyze with SonarScanner
       env:
-        # GITHUB_TOKEN是GitHub自动提供的
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # SONAR_TOKEN是你之前在仓库里设置的那个secret
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       run: |
-        # 找到sonar-scanner的目录名 (例如 sonar-scanner-5.0.1.3006-linux)
         SCANNER_DIR=$(find . -maxdepth 1 -type d -name "sonar-scanner-*-linux" | head -n 1)
-        
-        # 使用sonar-scanner的绝对路径
         $SCANNER_DIR/bin/sonar-scanner \
           -Dsonar.organization=zhang-weibing \
           -Dsonar.projectKey=zhang-weibing_brpc \
