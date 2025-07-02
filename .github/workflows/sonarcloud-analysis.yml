@@ -1,4 +1,4 @@
-name: "SonarCloud C++ Analysis (The Official Way)"
+name: "SonarCloud C++ Analysis (Official Action)"
 
 on:
   workflow_dispatch:
@@ -14,28 +14,43 @@ jobs:
       uses: actions/checkout@v4
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
-        fetch-depth: 0
+        fetch-depth: 0 # SonarCloud需要完整的git历史
+
+    # 步骤2: 安装所有编译依赖
+    - name: Install all dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
 
     # ========================== 最终核心修改点 ==========================
-    # 步骤2: (新) 使用官方的SonarCloud Action，它会处理所有事情
+    # 步骤3: (新) 使用build-wrapper包裹编译命令
+    # 我们不再需要手动下载，只需要直接调用 build-wrapper-linux-x86-64，
+    # 因为官方的Action会自动为我们准备好它。
+    - name: Build with build-wrapper
+      # 在这里，我们需要先手动下载 build-wrapper，因为官方Action只包含sonar-scanner
+      run: |
+        curl -fSL -o build-wrapper.zip "https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip"
+        unzip -o build-wrapper.zip
+        # 将build-wrapper的路径添加到PATH
+        echo "$(pwd)/build-wrapper-linux-x86" >> $GITHUB_PATH
+        
+        # 现在运行编译
+        build-wrapper-linux-x86-64 --out-dir bw-output cmake .
+        build-wrapper-linux-x86-64 --out-dir bw-output make -j2
+      
+    # 步骤4: (新) 使用官方的SonarCloud Action来执行分析
+    # 它会自动处理sonar-scanner的下载和调用
     - name: SonarCloud Scan
       uses: SonarSource/sonarcloud-github-action@v2.1.0
       env:
+        # GITHUB_TOKEN是GitHub自动提供的，无需设置
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # SONAR_TOKEN是你之前在仓库里设置的那个secret
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       with:
-        # 在这里定义我们的构建命令，Action会自动用build-wrapper包裹它
-        build-sh: |
-          # 1. 安装依赖
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
-          
-          # 2. 运行编译
-          cmake .
-          make -j2
-        
-        # 传入sonar-scanner需要的参数
+        # 告诉Action，build-wrapper的输出在哪里
         args: >
+          -Dsonar.cfamily.build-wrapper-output=bw-output
           -Dsonar.organization=zhang-weibing
           -Dsonar.projectKey=zhang-weibing_brpc
     # ====================================================================
