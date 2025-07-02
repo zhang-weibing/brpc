@@ -1,4 +1,4 @@
-name: "SonarCloud C++ Analysis (Official Action)"
+name: "SonarCloud C++ Analysis (The Definitive Manual Way)"
 
 on:
   workflow_dispatch:
@@ -14,43 +14,51 @@ jobs:
       uses: actions/checkout@v4
       with:
         ref: '50eed9b008e7eff012e788a8a328901f68373579'
-        fetch-depth: 0 # SonarCloud需要完整的git历史
+        fetch-depth: 0
 
     # 步骤2: 安装所有编译依赖
     - name: Install all dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev
+        sudo apt-get install -y build-essential cmake libssl-dev protobuf-compiler libgflags-dev libleveldb-dev libprotobuf-dev libprotoc-dev unzip
 
     # ========================== 最终核心修改点 ==========================
-    # 步骤3: (新) 使用build-wrapper包裹编译命令
-    # 我们不再需要手动下载，只需要直接调用 build-wrapper-linux-x86-64，
-    # 因为官方的Action会自动为我们准备好它。
-    - name: Build with build-wrapper
-      # 在这里，我们需要先手动下载 build-wrapper，因为官方Action只包含sonar-scanner
+    # 步骤3: 手动下载并准备所有SonarCloud工具
+    - name: Download and Prepare SonarCloud Tools
       run: |
+        # 下载 build-wrapper 并解压
         curl -fSL -o build-wrapper.zip "https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip"
         unzip -o build-wrapper.zip
-        # 将build-wrapper的路径添加到PATH
-        echo "$(pwd)/build-wrapper-linux-x86" >> $GITHUB_PATH
         
-        # 现在运行编译
-        build-wrapper-linux-x86-64 --out-dir bw-output cmake .
-        build-wrapper-linux-x86-64 --out-dir bw-output make -j2
+        # 下载 sonar-scanner 并解压
+        curl -fSL -o sonar-scanner.zip "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip"
+        unzip -o sonar-scanner.zip
+        
+        # 增加一个调试步骤，确认文件都已就位
+        echo "--- Listing current directory ---"
+        ls -l
+
+    # 步骤4: 使用build-wrapper的绝对路径来运行编译
+    - name: Build with build-wrapper
+      run: |
+        # 使用当前目录下的build-wrapper的绝对路径
+        ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw-output cmake .
+        ./build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw-output make -j2
       
-    # 步骤4: (新) 使用官方的SonarCloud Action来执行分析
-    # 它会自动处理sonar-scanner的下载和调用
-    - name: SonarCloud Scan
-      uses: SonarSource/sonarcloud-github-action@v2.1.0
+    # 步骤5: 使用sonar-scanner的绝对路径来运行分析
+    - name: Analyze with SonarScanner
       env:
-        # GITHUB_TOKEN是GitHub自动提供的，无需设置
+        # GITHUB_TOKEN是GitHub自动提供的
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # SONAR_TOKEN是你之前在仓库里设置的那个secret
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      with:
-        # 告诉Action，build-wrapper的输出在哪里
-        args: >
+      run: |
+        # 找到sonar-scanner的目录名 (例如 sonar-scanner-5.0.1.3006-linux)
+        SCANNER_DIR=$(find . -maxdepth 1 -type d -name "sonar-scanner-*-linux" | head -n 1)
+        
+        # 使用sonar-scanner的绝对路径
+        $SCANNER_DIR/bin/sonar-scanner \
+          -Dsonar.organization=zhang-weibing \
+          -Dsonar.projectKey=zhang-weibing_brpc \
           -Dsonar.cfamily.build-wrapper-output=bw-output
-          -Dsonar.organization=zhang-weibing
-          -Dsonar.projectKey=zhang-weibing_brpc
     # ====================================================================
